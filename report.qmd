@@ -7,28 +7,106 @@ format: typst
 
 ## **Part 0: libraries**
 
-```{r}
+```{r} 
+library(tidyverse)
+library(janitor)
+library(readr)
+library(sf)
+library(leaflet)
+library(ggthemes)
 
 ```
 
 ## **Part 1:** **Defining Research Question**
 
-Chosen Question:
+Chosen Question: Do states with more renewable energy usage also have higher EV registrations?
 
 ## **Part 2: Data Preparation and Cleaning**
 
 ```{r}
+# Load renewable energy data
+renew_21 <- read_csv("data/renew_use_2021.csv")
+renew_22 <- read_csv("data/renew_use_2022.csv")
+renew_23 <- read_csv("data/renew_use_2023.csv")
 
+# Load total energy data
+total_21 <- read_csv("data/total_energy_use_2021.csv")
+total_22 <- read_csv("data/total_energy_use_2022.csv")
+total_23 <- read_csv("data/total_energy_use_2023.csv")
+
+# Load average energy price and EV registrations
+energy_price <- read_csv("data/av_energy_price_2021-2023.csv")
+evs <- read_csv("data/ev-registrations-by_state_2023.csv")
+
+# Clean column names and ensure consistency
+clean_data <- function(df, year){
+  df %>%
+    clean_names() %>%
+    mutate(year = year,
+           state = str_to_title(state))
+}
+
+renew <- bind_rows(
+  clean_data(renew_21, 2021),
+  clean_data(renew_22, 2022),
+  clean_data(renew_23, 2023)
+)
+
+total <- bind_rows(
+  clean_data(total_21, 2021),
+  clean_data(total_22, 2022),
+  clean_data(total_23, 2023)
+)
+
+# Preview cleaned data
+head(renew)
 ```
 
 ## **Part 3: Joining / Pivoting Datasets for Analysis**
 
 ```{r}
+energy_joined <- renew %>%
+  left_join(total, by = c("state", "year")) %>%
+  mutate(renew_share = (renewable_energy_use / total_energy_use) * 100)
 
+# Add 2023 EV registrations
+energy_2023 <- energy_joined %>%
+  filter(year == 2023) %>%
+  left_join(evs, by = "state")
+
+head(energy_2023)
 ```
 
 ## **Part 4: Mapping Visualization**
 
 ```{r}
+# Load state geometries
+us_states <- map_data("state")
 
+# Match names
+energy_2023 <- energy_2023 %>%
+  mutate(region = str_to_lower(state))
+
+map_data_merged <- us_states %>%
+  left_join(energy_2023, by = "region")
+
+# Static ggplot map
+ggplot(map_data_merged, aes(long, lat, group = group, fill = renew_share)) +
+  geom_polygon(color = "white") +
+  scale_fill_gradient(low = "lightyellow", high = "darkgreen") +
+  labs(title = "Share of Renewable Energy by State (2023)",
+       fill = "Renewable %") +
+  theme_map()
+```
+
+
+```{r}
+# Interactive map
+leaflet(map_data_merged) %>%
+  addProviderTiles("CartoDB.Positron") %>%
+  addPolygons(
+    fillColor = ~colorNumeric("Greens", renew_share)(renew_share),
+    color = "#444", weight = 1,
+    popup = ~paste(state, "<br>", round(renew_share, 1), "% Renewable")
+  )
 ```
